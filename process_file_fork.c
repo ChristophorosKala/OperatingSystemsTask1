@@ -54,8 +54,8 @@ int main(int argc, char *argv[])
     
     char buffer[N];
     int len;
-    
-    if(pid == 0) {  // Παιδί
+    // Επιτυχία δημιουργίας Παιδιού
+    if(pid == 0) { 
         len = snprintf(buffer, N, "[CHILD] getpid()= %d, getppid()= %d\n", getpid(), getppid());
         
         // Γράψιμο στο αρχείο
@@ -68,8 +68,9 @@ int main(int argc, char *argv[])
         close(fd);
         exit(0);
     }
-    else {  // Γονέας
-        // Περιμένει το παιδί
+	//Δημιουργία Γονέα
+    else { 
+        //Αναστολή τη διεργασίας γονέα μέχρι να τερματίσει το παιδί
         wait(NULL);
         
         len = snprintf(buffer, N, "[PARENT] getpid()= %d, getppid()= %d\n", getpid(), getppid());
