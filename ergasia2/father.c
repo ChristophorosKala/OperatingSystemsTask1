@@ -10,14 +10,17 @@ pid_t *child_pids;
 
 // Συνάρτηση εκτύπωσης δέντρου
 void print_process_tree() {
-    char cmd[128];
-    // επιστρέφει το PID του πατέρα
-    getpid();
-    // τα παιδιά
-    sprintf(cmd, "pgrep -P %d", getpid()); 
-    
     printf("\n--- ΟΠΤΙΚΟΠΟΙΗΣΗ ΔΕΝΤΡΟΥ ΔΙΕΡΓΑΣΙΩΝ ---\n");
-    system(cmd);
+    printf("Πατέρας (PID: %d)\n", getpid());
+    
+    for (int i = 0; i < num_children; i++) {
+        // Αν είναι το τελευταίο παιδί, τυπώνει └── αλλιώς ├──
+        if (i == num_children - 1) {
+            printf(" └── Παιδί %d (PID: %d)\n", i, child_pids[i]);
+        } else {
+            printf(" ├── Παιδί %d (PID: %d)\n", i, child_pids[i]);
+        }
+    }
     printf("----------------------------------------\n\n");
 }
 
@@ -94,6 +97,11 @@ int main(int argc, char *argv[]) {
 
     child_pids = malloc(num_children * sizeof(pid_t));
 
+    // Σε περίπτωση αποτυχίας μνήμης
+    if (child_pids == NULL) {
+    perror("Malloc failed");
+    return 1;
+    }
     // Ρύθμιση Handler για προώθηση σημάτων
     struct sigaction sa_forward;
     sa_forward.sa_handler = forward_signal;
