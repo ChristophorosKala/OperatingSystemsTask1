@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <unistd.h>
 #include <signal.h>
@@ -7,9 +6,12 @@
 
 int main() {
     // --- ΡΥΘΜΙΣΗ ΠΕΙΡΑΜΑΤΟΣ ---
-    // Αλλαξε τον αριθμό από 1 έως 5 για να δεις διαφορετικά Actions:
-    // 1: Term, 2: Ign, 3: Core, 4: Stop, 5: Cont
-    int choice = 1; 
+    // 1: Term (Τερματισμός)
+    // 2: Ign  (Αγνόηση - το παιδί συνεχίζει)
+    // 3: Core (Τερματισμός με Core Dump)
+    // 4: Stop (Πάγωμα - Χρησιμοποίησέ το για το πείραμα με το 2ο τερματικό)
+    // 5: Cont (Συνέχεια)
+    int choice = 4; 
 
     pid_t pid = fork();
 
@@ -19,7 +21,7 @@ int main() {
     }
 
     if (pid == 0) {
-        // ΚΩΔΙΚΑΣ ΠΑΙΔΙΟΥ
+        // --- ΚΩΔΙΚΑΣ ΠΑΙΔΙΟΥ ---
         std::cout << "[Παιδί] Ξεκινάω τις εκτυπώσεις (PID: " << getpid() << ")..." << std::endl;
         for (int i = 1; i <= 20; ++i) {
             std::cout << "[Παιδί] Εκτύπωση σελίδας " << i << "..." << std::endl;
@@ -28,8 +30,8 @@ int main() {
         std::cout << "[Παιδί] Ολοκλήρωσα όλες τις εκτυπώσεις!" << std::endl;
         return 0;
     } else {
-        // ΚΩΔΙΚΑΣ ΠΑΤΕΡΑ
-        sleep(3); // Περιμένει 3 δευτερόλεπτα πριν δράσει
+        // --- ΚΩΔΙΚΑΣ ΠΑΤΕΡΑ ---
+        sleep(3); // Περιμένει λίγο να ξεκινήσει το παιδί
 
         int signal_to_send;
         std::string action_name;
@@ -48,19 +50,35 @@ int main() {
         
         kill(pid, signal_to_send);
 
-        // Ειδική περίπτωση για το Cont: Πρέπει πρώτα να το σταματήσουμε για να δούμε αν συνεχίζει
-        if (choice == 5) {
-            kill(pid, SIGSTOP); // Το σταματάμε
-            sleep(2);
-            std::cout << "[Πατέρας] Τώρα στέλνω SIGCONT για να συνεχίσει!" << std::endl;
-            kill(pid, SIGCONT);
+        // Βρόχος παρακολούθησης του παιδιού
+        int status;
+        bool child_is_alive = true;
+
+        std::cout << "[Πατέρας] Μπαίνω σε κατάσταση αναμονής για το παιδί..." << std::endl;
+
+        while (child_is_alive) {
+            // Το waitpid εδώ "πιάνει" τα πάντα: θάνατο, πάγωμα (Stop) και ξύπνημα (Continue)
+            waitpid(pid, &status, WUNTRACED | WCONTINUED);
+
+            if (WIFEXITED(status)) {
+                std::cout << "[Πατέρας] Το παιδί βγήκε κανονικά (exit)." << std::endl;
+                child_is_alive = false;
+            } 
+            else if (WIFSIGNALED(status)) {
+                std::cout << "[Πατέρας] Το παιδί σκοτώθηκε από σήμα: " << WTERMSIG(status) << std::endl;
+                child_is_alive = false;
+            } 
+            else if (WIFSTOPPED(status)) {
+                std::cout << "[Πατέρας] ΕΙΔΟΠΟΙΗΣΗ: Το παιδί μόλις ΣΤΑΜΑΤΗΣΕ (Stopped)." << std::endl;
+                std::cout << "[Πατέρας] Περιμένω σήμα SIGCONT από το άλλο τερματικό για να συνεχίσω..." << std::endl;
+            } 
+            else if (WIFCONTINUED(status)) {
+                std::cout << "[Πατέρας] ΕΙΔΟΠΟΙΗΣΗ: Το παιδί ΣΥΝΕΧΙΖΕΙ (Continued)!" << std::endl;
+            }
         }
 
-        // Έλεγχος κατάστασης (Status)
-        int status;
-        waitpid(pid, &status, WUNTRACED | WCONTINUED);
+        std::cout << "[Πατέρας] Το παιδί τελείωσε πλήρως. Κλείνω κι εγώ." << std::endl;
+    }
 
-        if (WIFEXITED(status)) {
-            std::cout << "[Πατέρας] Αποτέλεσμα: Το παιδί βγήκε κανονικά." << std::endl;
-        } else if (WIFSIGNALED(status)) {
-            std::cout << "[Πατέρας] Αποτέλεσμα: Το παιδί σκοτώθηκε από σήμα " << WTERMSIG(status) << std::endl
+    return 0;
+}
