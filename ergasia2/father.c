@@ -8,6 +8,19 @@
 int num_children;
 pid_t *child_pids;
 
+// Συνάρτηση εκτύπωσης δέντρου
+void print_process_tree() {
+    char cmd[128];
+    // επιστρέφει το PID του πατέρα
+    getpid();
+    // τα παιδιά
+    sprintf(cmd, "pgrep -P %d", getpid()); 
+    
+    printf("\n--- ΟΠΤΙΚΟΠΟΙΗΣΗ ΔΕΝΤΡΟΥ ΔΙΕΡΓΑΣΙΩΝ ---\n");
+    system(cmd);
+    printf("----------------------------------------\n\n");
+}
+
 // Συνάρτηση για τη δημιουργία ενός παιδιού σε συγκεκριμένη θέση του πίνακα
 void spawn_child(int i) {
     pid_t pid = fork();
@@ -105,6 +118,9 @@ int main(int argc, char *argv[]) {
 
     printf("[Father] All children spawned. Process tree is ready.\n");
 
+    // εκτύπωση δέντρου
+    print_process_tree();
+    
     // Ο πατέρας παραμένει ζωντανός για να συντονίζει
     while (1) {
         pause();
