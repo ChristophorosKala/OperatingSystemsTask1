@@ -9,13 +9,13 @@
 #include <sys/select.h>
 #include <errno.h>
 
-/ Μια ειδική global μεταβλητή (ασφαλής για σήματα)
+// Μια ειδική global μεταβλητή (ασφαλής για σήματα)
 volatile sig_atomic_t exit_requested = 0;
 
 #define STRAT_ROUND_ROBIN 0
 #define STRAT_RANDOM 1
 
-// Forced execution break handler flag
+// Forced execution break handler flag (Πιάνει το Ctrl+C)
 void handle_sigint(int sig) {
     exit_requested = 1;
 }
@@ -80,7 +80,7 @@ void parent_logic(int n, int strategy, int (*p2c)[2], int (*c2p)[2], pid_t *pids
                 break;
             }
         }
-	
+        
         // -- 1. Ήρθε εντολή από τον χρήστη (Terminal) --
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             
@@ -168,11 +168,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // EDGE CASE: Πες στο σύστημα να στέλνει το Ctrl+C στον Handler σου (αντί να σε σκοτώνει)
     // Πιάσε το Ctrl+C (SIGINT)
     signal(SIGINT, handle_sigint);
 
-    // EDGE CASE: Αποφυγή θανάτου του πατέρα αν σπάσει κάποιο pipe
+    // Αποφυγή θανάτου του πατέρα αν σπάσει κάποιο pipe (Broken Pipe)
     signal(SIGPIPE, SIG_IGN);
 
     // 2. Προετοιμασία (Μνήμη & Pipes)
@@ -206,12 +205,11 @@ int main(int argc, char *argv[]) {
         }
 
         if (pid == 0) {
-            // Το παιδί κλείνει τα άκρα που δεν χρειάζεται
+            // Ο σωστός τρόπος κλεισίματος για να αποφύγουμε το FD Reuse Bug!
+            // Το παιδί κλείνει τα άκρα που έχει κρατήσει ανοιχτά ο πατέρας
             for (int j = 0; j <= i; j++) {
-                close(p2c[j][1]); 
-                if (j < i) close(p2c[j][0]); 
-                close(c2p[j][0]); 
-                if (j < i) close(c2p[j][1]); 
+                close(p2c[j][1]); // Κλείνει τα άκρα εγγραφής του πατέρα
+                close(c2p[j][0]); // Κλείνει τα άκρα ανάγνωσης του πατέρα
             }
             child_logic(i, p2c[i][0], c2p[i][1]);
         } else {

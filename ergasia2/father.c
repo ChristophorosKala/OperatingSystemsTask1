@@ -7,8 +7,6 @@
 
 int num_children;
 pid_t *child_pids;
-volatile sig_atomic_t shutting_down =
-    0; // Η νέα μας σημαία για τερματισμό πατέρα
 
 // Συνάρτηση εκτύπωσης δέντρου
 void print_process_tree() {
