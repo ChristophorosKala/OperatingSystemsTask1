@@ -133,9 +133,13 @@ void parent_logic(int n, int strategy, int (*p2c)[2], int (*c2p)[2], pid_t *pids
         for (int i = 0; i < n; i++) {
             if (FD_ISSET(c2p[i][0], &readfds)) {
                 int result;
+                // Διάβασμα του αποτελέσματος από το pipe
+                int bytes_read = read(c2p[i][0], &result, sizeof(int));
                 // ERROR HANDLING στην ανάγνωση
-                if (read(c2p[i][0], &result, sizeof(int)) == -1) {
+                if (bytes_read == -1) {
                     perror("Failed to read from child");
+                } else {
+                    printf("[Parent] Received result %d from child %d\n", result, i);
                 }
             }
         }
