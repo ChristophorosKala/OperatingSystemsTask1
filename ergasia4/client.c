@@ -12,6 +12,84 @@
 #define DEFAULT_PORT 4217
 #define BUFFER_SIZE 1024
 
+/* Μετατροπή IPv4 από dotted string σε network-byte-order bytes */
+static int parse_ipv4_address(const char *ip, struct in_addr *addr) {
+    unsigned int octet1, octet2, octet3, octet4;
+    char extra;
+
+    if(sscanf(ip, "%u.%u.%u.%u%c", &octet1, &octet2, &octet3, &octet4, &extra) != 4) {
+        return -1;
+    }
+
+    if(octet1 > 255 || octet2 > 255 || octet3 > 255 || octet4 > 255) {
+        return -1;
+    }
+
+    addr->s_addr = htonl((octet1 << 24) | (octet2 << 16) | (octet3 << 8) | octet4);
+    return 0;
+}
+
+/* Parse και εκτύπωση μόνο για απαντήσεις τύπου get */
+static int print_get_response(const char *response) {
+    int event_code;
+    int brightness;
+    int temperature_raw;
+    long timestamp;
+
+    if(sscanf(response, "%d %d %d %ld", &event_code, &brightness, &temperature_raw, &timestamp) != 4) {
+        return 0;
+    }
+
+    const char *event_name = "unknown";
+
+    switch(event_code) {
+        case 0: event_name = "boot"; break;
+        case 1: event_name = "setup"; break;
+        case 2: event_name = "interval"; break;
+        case 3: event_name = "button"; break;
+        case 4: event_name = "motion"; break;
+    }
+
+    double temperature = temperature_raw / 100.0;
+    time_t ts = (time_t)timestamp;
+    struct tm *tm_info = localtime(&ts);
+
+    if(tm_info != NULL) {
+        char time_buffer[64];
+
+        if(strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", tm_info) > 0) {
+            /* Exact exercise output format */
+            printf("Latest event:\n");
+            printf("%s (%d)\n", event_name, event_code);
+            printf("Temperature is: %.2f\n", temperature);
+            printf("Light level is: %d\n", brightness);
+            printf("Timestamp is: %s\n", time_buffer);
+            return 1;
+        }
+    }
+
+    /* Fallback: print numeric timestamp if time formatting failed */
+    printf("Latest event:\n");
+    printf("%s (%d)\n", event_name, event_code);
+    printf("Temperature is: %.2f\n", temperature);
+    printf("Light level is: %d\n", brightness);
+    printf("Timestamp is: %ld\n", timestamp);
+
+    return 1;
+}
+
+static int read_server_message(int sockfd, char *buffer, size_t buffer_size) {
+    int n = read(sockfd, buffer, buffer_size - 1);
+
+    if(n <= 0) {
+        return n;
+    }
+
+    buffer[n] = '\0';
+    buffer[strcspn(buffer, "\n")] = '\0';
+    return n;
+}
+
 /* Εκτύπωση διαθέσιμων εντολών */
 void print_help() {
     
@@ -59,22 +137,22 @@ int main(int argc, char *argv[]) {
     }
 
     /* Δομή διεύθυνσης server */
-    struct sockaddr_in addr;
+    struct sockaddr_in server_addr;
 
-    memset(&addr, 0, sizeof(addr));
+    memset(&server_addr, 0, sizeof(server_addr));
 
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
 
-    /* Μετατροπή IP σε binary μορφή */
-    if(inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-        perror("inet_pton");
+    /* Χειροκίνητη μετατροπή IP σε binary μορφή χωρίς DNS/name resolution */
+    if(parse_ipv4_address(ip, &server_addr.sin_addr) < 0) {
+        fprintf(stderr, "Invalid IPv4 address: %s\n", ip);
         close(sockfd);
         return 1;
     }
 
     /* Σύνδεση με server */
-    if(connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if(connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect");
         close(sockfd);
         return 1;
@@ -133,6 +211,7 @@ int main(int argc, char *argv[]) {
             /* Έξοδος προγράμματος */
             if(strcmp(send_buffer, "exit") == 0) {
                 printf("Exiting...\n");
+                close(sockfd); // Κλείσιμο socket πριν την έξοδο
                 break;
             }
 
@@ -146,6 +225,53 @@ int main(int argc, char *argv[]) {
             if(write(sockfd, send_buffer, strlen(send_buffer)) < 0) {
                 perror("write");
                 break;
+            }
+
+            /* Ειδικός χειρισμός για αίτημα άδειας */
+            if(send_buffer[0] >= '0' && send_buffer[0] <= '9' && strchr(send_buffer, ' ') != NULL) {
+                char verification_buffer[BUFFER_SIZE];
+                int verification_read = read_server_message(sockfd, verification_buffer, sizeof(verification_buffer));
+
+                if(verification_read < 0) {
+                    perror("read");
+                    break;
+                }
+
+                if(verification_read == 0) {
+                    printf("Server disconnected\n");
+                    break;
+                }
+
+                if(strcmp(verification_buffer, "try again") == 0) {
+                    printf("Server: %s\n", verification_buffer);
+                    continue;
+                }
+
+                printf("Send verification code: %s\n", verification_buffer);
+
+                if(write(sockfd, verification_buffer, strlen(verification_buffer)) < 0) {
+                    perror("write");
+                    break;
+                }
+
+                int final_read = read_server_message(sockfd, verification_buffer, sizeof(verification_buffer));
+
+                if(final_read < 0) {
+                    perror("read");
+                    break;
+                }
+
+                if(final_read == 0) {
+                    printf("Server disconnected\n");
+                    break;
+                }
+
+                if(debug) {
+                    printf("[DEBUG] read '%s'\n", verification_buffer);
+                }
+
+                printf("Server: %s\n", verification_buffer);
+                continue;
             }
             
             /* Debug πληροφορίες */
@@ -163,8 +289,8 @@ int main(int argc, char *argv[]) {
             memset(recv_buffer, 0, BUFFER_SIZE);
 
             /* Διαβάζουμε δεδομένα από socket */
-            int n = read(sockfd, recv_buffer, BUFFER_SIZE - 1);
-            
+            int n = read_server_message(sockfd, recv_buffer, sizeof(recv_buffer));
+
             /* Έλεγχος σφάλματος */
             if(n == -1) {
                 perror("read");
@@ -177,19 +303,15 @@ int main(int argc, char *argv[]) {
                 break;
             }
             
-            /* Προσθήκη '\0' στο τέλος */
-            recv_buffer[n] = '\0';
-
-            /* Αφαίρεση newline */
-            recv_buffer[strcspn(recv_buffer, "\n")] = '\0';
-            
             /* Debug πληροφορίες */
             if(debug) {
                 printf("[DEBUG] read '%s'\n", recv_buffer);
             }
 
-            /* Εκτύπωση απάντησης server */
-            printf("Server: %s\n", recv_buffer);
+            /* Αν είναι απάντηση get, την αποκωδικοποιούμε ξεχωριστά */
+            if(!print_get_response(recv_buffer)) {
+                printf("Server: %s\n", recv_buffer);
+            }
         }
         
         /* =========================================
