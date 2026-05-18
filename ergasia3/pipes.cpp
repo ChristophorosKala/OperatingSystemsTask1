@@ -129,16 +129,30 @@ void parent_logic(int n, int strategy, int (*p2c)[2], int (*c2p)[2], pid_t *pids
             }
         }
 
+
         // -- 2. Ήρθε απάντηση από κάποιο παιδί --
         for (int i = 0; i < n; i++) {
-            if (FD_ISSET(c2p[i][0], &readfds)) {
+            // Ελέγχουμε μόνο τα ζωντανά pipes
+            if (c2p[i][0] != -1 && FD_ISSET(c2p[i][0], &readfds)) {
                 int result;
-                // Διάβασμα του αποτελέσματος από το pipe
                 int bytes_read = read(c2p[i][0], &result, sizeof(int));
-                // ERROR HANDLING στην ανάγνωση
+                
                 if (bytes_read == -1) {
                     perror("Failed to read from child");
-                } else {
+                } 
+                else if (bytes_read == 0) {
+                    // <--- Η ΜΑΓΕΙΑ (EDGE CASE FIX) --->
+                    printf("\n[Parent] Warning: Child %d died unexpectedly! Closing its pipes.\n", i);
+                    
+                    // Κλείνουμε τα δικά μας άκρα
+                    close(c2p[i][0]);
+                    close(p2c[i][1]); 
+                    
+                    // Μαρκάρουμε ως -1 για να τα αγνοεί πλέον το σύστημα
+                    c2p[i][0] = -1;   
+                    p2c[i][1] = -1;
+                } 
+                else if (bytes_read > 0) {
                     printf("[Parent] Received result %d from child %d\n", result, i);
                 }
             }
