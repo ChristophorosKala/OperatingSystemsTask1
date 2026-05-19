@@ -289,7 +289,15 @@ int main(int argc, char *argv[]) {
             if(current_state == STATE_WAITING_VERIFICATION) {
                 printf("Send verification code: %s\n", recv_buffer);
 
-                if(write(sockfd, recv_buffer, strlen(recv_buffer)) < 0) {
+                char verification_send[BUFFER_SIZE];
+                int verification_length = snprintf(verification_send, sizeof(verification_send), "%s\n", recv_buffer);
+
+                if(verification_length < 0 || verification_length >= (int)sizeof(verification_send)) {
+                    fprintf(stderr, "Verification code is too long\n");
+                    break;
+                }
+
+                if(write(sockfd, verification_send, strlen(verification_send)) < 0) {
                     perror("write");
                     break;
                 }
