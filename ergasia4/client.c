@@ -12,6 +12,13 @@
 #define DEFAULT_PORT 4217
 #define BUFFER_SIZE 1024
 
+typedef enum {
+    STATE_IDLE,
+    STATE_WAITING_GET_RESPONSE,
+    STATE_WAITING_VERIFICATION,
+    STATE_WAITING_FINAL_ACK
+} client_state_t;
+
 /* Μετατροπή IPv4 από dotted string σε network-byte-order bytes */
 static int parse_ipv4_address(const char *ip, struct in_addr *addr) {
     unsigned int octet1, octet2, octet3, octet4;
@@ -180,6 +187,7 @@ int main(int argc, char *argv[]) {
     /* Buffers αποστολής/λήψης */
     char send_buffer[BUFFER_SIZE];
     char recv_buffer[BUFFER_SIZE];
+    client_state_t current_state = STATE_IDLE;
 
     /* Κεντρικό loop client */
     while(1) {
@@ -227,50 +235,20 @@ int main(int argc, char *argv[]) {
                 break;
             }
 
+            if(strcmp(send_buffer, "get") == 0) {
+                current_state = STATE_WAITING_GET_RESPONSE;
+                if(debug) {
+                    printf("[DEBUG] sent '%s'\n", send_buffer);
+                }
+                continue;
+            }
+
             /* Ειδικός χειρισμός για αίτημα άδειας */
             if(send_buffer[0] >= '0' && send_buffer[0] <= '9' && strchr(send_buffer, ' ') != NULL) {
-                char verification_buffer[BUFFER_SIZE];
-                int verification_read = read_server_message(sockfd, verification_buffer, sizeof(verification_buffer));
-
-                if(verification_read < 0) {
-                    perror("read");
-                    break;
-                }
-
-                if(verification_read == 0) {
-                    printf("Server disconnected\n");
-                    break;
-                }
-
-                if(strcmp(verification_buffer, "try again") == 0) {
-                    printf("Server: %s\n", verification_buffer);
-                    continue;
-                }
-
-                printf("Send verification code: %s\n", verification_buffer);
-
-                if(write(sockfd, verification_buffer, strlen(verification_buffer)) < 0) {
-                    perror("write");
-                    break;
-                }
-
-                int final_read = read_server_message(sockfd, verification_buffer, sizeof(verification_buffer));
-
-                if(final_read < 0) {
-                    perror("read");
-                    break;
-                }
-
-                if(final_read == 0) {
-                    printf("Server disconnected\n");
-                    break;
-                }
-
+                current_state = STATE_WAITING_VERIFICATION;
                 if(debug) {
-                    printf("[DEBUG] read '%s'\n", verification_buffer);
+                    printf("[DEBUG] sent '%s'\n", send_buffer);
                 }
-
-                printf("Server: %s\n", verification_buffer);
                 continue;
             }
             
@@ -308,16 +286,34 @@ int main(int argc, char *argv[]) {
                 printf("[DEBUG] read '%s'\n", recv_buffer);
             }
 
-            /* Αν είναι απάντηση get, την αποκωδικοποιούμε ξεχωριστά */
-            if(!print_get_response(recv_buffer)) {
-                printf("Server: %s\n", recv_buffer);
+            if(current_state == STATE_WAITING_VERIFICATION) {
+                printf("Send verification code: %s\n", recv_buffer);
+
+                if(write(sockfd, recv_buffer, strlen(recv_buffer)) < 0) {
+                    perror("write");
+                    break;
+                }
+
+                current_state = STATE_WAITING_FINAL_ACK;
+                continue;
             }
+
+            if(current_state == STATE_WAITING_FINAL_ACK) {
+                printf("Server: %s\n", recv_buffer);
+                current_state = STATE_IDLE;
+                continue;
+            }
+
+            if(current_state == STATE_WAITING_GET_RESPONSE) {
+                if(!print_get_response(recv_buffer)) {
+                    printf("Server: %s\n", recv_buffer);
+                }
+                current_state = STATE_IDLE;
+                continue;
+            }
+
+            printf("Server: %s\n", recv_buffer);
         }
-        
-        /* =========================================
-           Εδώ πρέπει να βάλουμε επιπλέον έλεγχο
-           για απαντήσεις τύπου "get"
-           ========================================= */
     }
 
     /* Κλείσιμο socket */
