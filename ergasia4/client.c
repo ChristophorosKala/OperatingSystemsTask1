@@ -60,27 +60,27 @@ static int print_get_response(const char *response) {
     double temperature = temperature_raw / 100.0;
     time_t ts = (time_t)timestamp;
     struct tm *tm_info = localtime(&ts);
+    char time_buffer[64];
+    char fallback_buffer[64];
+    const char *timestamp_string = NULL;
 
     if(tm_info != NULL) {
-        char time_buffer[64];
-
         if(strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", tm_info) > 0) {
-            /* Exact exercise output format */
-            printf("Latest event:\n");
-            printf("%s (%d)\n", event_name, event_code);
-            printf("Temperature is: %.2f\n", temperature);
-            printf("Light level is: %d\n", brightness);
-            printf("Timestamp is: %s\n", time_buffer);
-            return 1;
+            timestamp_string = time_buffer;
         }
     }
 
-    /* Fallback: print numeric timestamp if time formatting failed */
+    if(timestamp_string == NULL) {
+        snprintf(fallback_buffer, sizeof(fallback_buffer), "%ld", timestamp);
+        timestamp_string = fallback_buffer;
+    }
+
+    /* Exact exercise output format */
     printf("Latest event:\n");
     printf("%s (%d)\n", event_name, event_code);
     printf("Temperature is: %.2f\n", temperature);
     printf("Light level is: %d\n", brightness);
-    printf("Timestamp is: %ld\n", timestamp);
+    printf("Timestamp is: %s\n", timestamp_string);
 
     return 1;
 }
